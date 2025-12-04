@@ -1,0 +1,40 @@
+{
+	"name": "legadb",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "bun run --watch bun-server.ts",
+		"lint": "oxlint .",
+		"fmt": "prisma format && deno fmt --use-tabs",
+		"cli:test": "bun run clitest/correctness.ts && bun run clitest/ingestion.ts",
+		"cli:test:correctness": "bun run clitest/correctness.ts",
+		"cli:test:ingestion": "bun run clitest/ingestion.ts",
+		"db:push": "prisma db push",
+		"db:reset": "prisma migrate reset --force && prisma db push"
+	},
+	"dependencies": {
+		"@dbos-inc/dbos-sdk": "^4.4.9",
+		"@prisma/adapter-pg": "^7.0.0",
+		"@prisma/client": "^7.0.0",
+		"@std/cbor": "npm:@jsr/std__cbor",
+		"@tanstack/react-query": "^5.90.10",
+		"@tanstack/react-router": "^1.139.3",
+		"@tanstack/router-devtools": "^1.139.3",
+		"arktype": "^2.1.27",
+		"postgres": "^3.4.7",
+		"prisma": "^7.0.0",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"sonner": "^2.0.7"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "^4",
+		"@types/bun": "^1.3.2",
+		"@types/node": "^20",
+		"@types/react": "^19",
+		"@types/react-dom": "^19",
+		"bun-plugin-tailwind": "^0.1.2",
+		"oxlint": "^1.30.0",
+		"tailwindcss": "^4.1.17"
+	}
+}

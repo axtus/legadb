@@ -1,0 +1,228 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider   = "prisma-client"
+  output     = "./generated"
+  engineType = "client"
+  runtime    = "bun"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Currency {
+  code       String     @id @db.Char(5)
+  name       String
+  symbol     String     @db.Char(3)
+  minorUnits Int        @map("minor_units")
+  accounts   Account[]
+  Transfer   Transfer[]
+
+  @@map("currencies")
+}
+
+model Ledger {
+  id        Int       @id
+  name      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  accounts  Account[]
+
+  @@map("ledgers")
+}
+
+enum AccountBalanceType {
+  DEBIT // balance = DEBIT - CREDIT
+  CREDIT // balance = CREDIT - DEBIT
+}
+
+model Account {
+  id                     BigInt                  @id
+  balanceType            AccountBalanceType      @map("balance_type")
+  ledgerId               Int                     @map("ledger_id")
+  externalId             String?                 @unique @map("external_id") @db.VarChar(255) /// Unique ID from external system.
+  currencyCode           String                  @map("currency_code")
+  userData               Json?                   @map("user_data") /// Optional free-form metadata (small).
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @default(now()) @updatedAt @map("updated_at")
+  minimumBalance         Decimal                 @default(0) @map("minimum_balance") @db.Decimal(25, 9)
+  maximumBalance         Decimal?                @map("maximum_balance") @db.Decimal(25, 9)
+  // Relations
+  currency               Currency                @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  ledger                 Ledger                  @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  debits                 Transfer[]              @relation("debits")
+  credits                Transfer[]              @relation("credits")
+  accountBalanceSnapshot AccountBalanceSnapshot? @relation("accountBalanceSnaphot")
+
+  @@index([ledgerId])
+  @@index([currencyCode])
+  @@index([externalId])
+  @@map("accounts")
+}
+
+model Transfer {
+  id              String            @id @db.Uuid
+  externalId      String?           @unique @map("external_id") @db.VarChar(255) /// Unique ID from external system.
+  currencyCode    String            @map("currency_code")
+  debitAccountId  BigInt            @map("debit_account_id")
+  creditAccountId BigInt            @map("credit_account_id")
+  amount          Decimal           @db.Decimal(25, 9)
+  reference       String?           @map("reference") @db.VarChar(255)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  debitAccount    Account           @relation("debits", fields: [debitAccountId], references: [id], onDelete: Restrict)
+  creditAccount   Account           @relation("credits", fields: [creditAccountId], references: [id], onDelete: Restrict)
+  currency        Currency          @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  state           TransferState
+  stateMap        TransferMetaData? @relation("transferMetaData")
+  transferRequest TransferRequest?
+
+  @@index([currencyCode])
+  @@index([debitAccountId])
+  @@index([creditAccountId])
+  @@index([state])
+  @@index([debitAccountId, state])
+  @@index([creditAccountId, state])
+  @@map("transfers")
+}
+
+enum TransferState {
+  PENDING
+  POSTED
+  VOIDED
+}
+
+// One-to-one mapping of Transfer to its current meta data.
+// So that we do not have all this in the Transfer model itself.
+model TransferMetaData {
+  id         String   @id @db.Uuid
+  transferId String   @unique @map("transfer_id") @db.Uuid
+  messages   String[]
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+  Transfer   Transfer @relation("transferMetaData", fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@index([transferId])
+  @@map("transfer_meta_data")
+}
+
+enum TransferRequestStatus {
+  PENDING
+  COMPLETED
+  INVALID
+  FAILED
+}
+
+model TransferRequest {
+  id         String                @id @db.Uuid
+  body       Bytes
+  status     TransferRequestStatus @default(PENDING)
+  transferId String?               @unique @map("transfer_id") @db.Uuid
+  runInfo    Json?                 @map("run_info")
+  createdAt  DateTime              @default(now()) @map("created_at")
+  // relations
+  transfer   Transfer?             @relation(fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("transfer_requests")
+}
+
+model AccountBalanceSnapshot {
+  id             BigInt   @id
+  accountId      BigInt   @unique @map("account_id")
+  asOf           DateTime @map("as_of")
+  debitsPosted   Decimal  @map("debits_posted") @db.Decimal(25, 9)
+  creditsPosted  Decimal  @map("credits_posted") @db.Decimal(25, 9)
+  debitsPending  Decimal  @map("debits_pending") @db.Decimal(25, 9)
+  creditsPending Decimal  @map("credits_pending") @db.Decimal(25, 9)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+  account        Account? @relation("accountBalanceSnaphot", fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, asOf])
+  @@index([asOf])
+  @@map("account_balance_snapshots")
+}
+
+model ApiKey {
+  id            String        @id
+  key           String        @unique @db.VarChar(255) /// Encrypted API key
+  keyVersion    Int           @map("key_version") /// References EncryptionKey version
+  name          String        @db.VarChar(255)
+  ledgerId      Int?          @map("ledger_id")
+  description   String?       @db.Text
+  permissions   Json          @default("{}")
+  deActivatedAt DateTime?     @map("deactivated_at")
+  expiresAt     DateTime?     @map("expires_at")
+  lastUsedAt    DateTime?     @map("last_used_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at")
+  encryptionKey EncryptionKey @relation(fields: [keyVersion], references: [id], onDelete: Restrict)
+
+  @@index([key])
+  @@index([deActivatedAt])
+  @@index([keyVersion])
+  @@map("api_keys")
+}
+
+/// Encryption keys for API key storage - child keys encrypted with GL_ENC_KEY
+model EncryptionKey {
+  id           Int       @id @default(autoincrement())
+  encryptedKey String    @map("encrypted_key") @db.VarChar(512) /// Child key encrypted with master GL_ENC_KEY
+  createdAt    DateTime  @default(now()) @map("created_at")
+  activeUntil  DateTime? @map("active_until") /// Null means currently active
+  apiKeys      ApiKey[]
+
+  @@index([activeUntil])
+  @@map("encryption_keys")
+}
+
+enum SystemRole {
+  ADMIN
+  USER
+}
+
+model AuthIdentity {
+  id              String                @id
+  username        String                @unique
+  passwordHash    String                @map("password_hash")
+  systemRole      SystemRole            @default(USER) @map("system_role")
+  disabledAt      DateTime?             @map("disabled_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at")
+  sessions        AuthSession[]
+  passwordHistory AuthPasswordHistory[]
+
+  @@index([disabledAt])
+  @@map("auth_identities")
+}
+
+model AuthSession {
+  id         String       @id @default(uuid()) @db.Uuid
+  token      String       @unique
+  identityId String       @map("identity_id")
+  expiresAt  DateTime     @map("expires_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @default(now()) @updatedAt @map("updated_at")
+  identity   AuthIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+
+  @@index([token])
+  @@index([identityId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model AuthPasswordHistory {
+  id           String       @id @default(uuid()) @db.Uuid
+  identityId   String       @map("identity_id")
+  passwordHash String       @map("password_hash")
+  changedAt    DateTime     @default(now()) @map("changed_at")
+  identity     AuthIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+
+  @@index([identityId])
+  @@index([changedAt])
+  @@map("auth_password_history")
+}
